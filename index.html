@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>TimeCafe — Умный тайм-калькулятор</title>
+    <!-- Google Fonts + Font Awesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f5f7fe;
+            color: #1a1a2c;
+            line-height: 1.5;
+            padding: 24px 16px;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        /* главная карточка */
+        .main-card {
+            background: #ffffff;
+            border-radius: 48px;
+            box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        /* шапка */
+        .hero {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            padding: 48px 40px;
+            color: white;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+
+        .hero p {
+            font-size: 1.1rem;
+            opacity: 0.85;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* тарифная сетка */
+        .rates-panel {
+            background: #f8fafd;
+            padding: 28px 32px;
+            border-bottom: 1px solid #e9eef3;
+        }
+
+        .rates-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            justify-content: center;
+        }
+
+        .rate-card {
+            background: white;
+            border-radius: 28px;
+            padding: 20px 24px;
+            flex: 1;
+            min-width: 240px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+            border: 1px solid #eef2f8;
+        }
+
+        .rate-card h3 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #1e293b;
+        }
+
+        .rate-card ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .rate-card li {
+            margin: 10px 0;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            color: #334155;
+        }
+
+        .rate-card i {
+            width: 24px;
+            color: #4f46e5;
+        }
+
+        .badge-stop {
+            background: #fee2e2;
+            color: #b91c1c;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            display: inline-block;
+            margin-top: 10px;
+        }
+
+        /* центр управления */
+        .control-panel {
+            padding: 48px 32px;
+            text-align: center;
+            background: white;
+        }
+
+        .status-area {
+            background: #f1f4f9;
+            border-radius: 64px;
+            padding: 24px;
+            margin-bottom: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        .status-led {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #94a3b8;
+            transition: 0.2s;
+        }
+        .status-led.active {
+            background: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+        }
+
+        .time-info {
+            font-family: monospace;
+            font-size: 1rem;
+            color: #334155;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            border: none;
+            padding: 14px 32px;
+            border-radius: 60px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        .btn-start {
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25);
+        }
+
+        .btn-start:hover:not(:disabled) {
+            background: #4338ca;
+            transform: translateY(-2px);
+        }
+
+        .btn-end {
+            background: #ef4444;
+            color: white;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-end:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result-area {
+            background: linear-gradient(120deg, #eef2ff, #ffffff);
+            border-radius: 48px;
+            padding: 28px 24px;
+            margin-top: 20px;
+            text-align: center;
+            border: 1px solid #e0e7ff;
+        }
+
+        .total-label {
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            color: #475569;
+        }
+
+        .total-amount {
+            font-size: 3.6rem;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+
+        .total-amount span {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .message {
+            margin-top: 16px;
+            font-size: 0.9rem;
+            color: #4f46e5;
+            font-weight: 500;
+        }
+
+        footer {
+            text-align: center;
+            padding: 32px;
+            font-size: 0.8rem;
+            color: #5b6e8c;
+        }
+
+        @media (max-width: 700px) {
+            .hero h1 { font-size: 2rem; }
+            .control-panel { padding: 32px 20px; }
+            .total-amount { font-size: 2.5rem; }
+            .status-area { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="main-card">
+        <div class="hero">
+            <h1><i class="fas fa-hourglass-half"></i> TimeCafe</h1>
+            <p>Умная тарификация визита: нажмите «Старт» — войдите, «Стоп» — получите точную сумму к оплате</p>
+        </div>
+        <div class="rates-panel">
+            <div class="rates-grid">
+                <div class="rate-card">
+                    <h3><i class="fas fa-calendar-week"></i> Выходные</h3>
+                    <ul>
+                        <li><i class="fas fa-clock"></i> 10:00 – 22:00</li>
+                        <li><i class="fas fa-ruble-sign"></i> 4 ₽/мин</li>
+                        <li><i class="fas fa-hourglass-start"></i> Первый час — 300 ₽</li>
+                        <li><i class="fas fa-stop-circle"></i> Стоп-чек: <strong>900 ₽</strong></li>
+                    </ul>
+                </div>
+                <div class="rate-card">
+                    <h3><i class="fas fa-calendar-day"></i> Будни (пн–пт)</h3>
+                    <ul>
+                        <li><i class="fas fa-clock"></i> 12:00 – 22:00</li>
+                        <li><i class="fas fa-sun"></i> 12:00–16:00 → 2.5 ₽/мин</li>
+                        <li><i class="fas fa-moon"></i> 16:00–22:00 → 4 ₽/мин</li>
+                        <li><i class="fas fa-hourglass-start"></i> Первый час — 300 ₽</li>
+                        <li><i class="fas fa-stop-circle"></i> Стоп-чек: <strong>1300 ₽</strong></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <div class="status-area">
+                <div class="status-badge">
+                    <div class="status-led" id="statusLed"></div>
+                    <span id="statusText">Нет активного визита</span>
+                </div>
+                <div class="time-info" id="currentTimeDisplay"></div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-start" id="startBtn"><i class="fas fa-play"></i> Начать визит</button>
+                <button class="btn btn-end" id="endBtn" disabled><i class="fas fa-stop"></i> Завершить визит</button>
+            </div>
+
+            <div class="result-area">
+                <div class="total-label">Сумма к оплате</div>
+                <div class="total-amount" id="totalAmount">0 ₽</div>
+                <div class="message" id="infoMessage"></div>
+            </div>
+        </div>
+        <footer>
+            <i class="fas fa-info-circle"></i> Визит можно начать только в рабочие часы. После завершения сумма фиксируется согласно тарифам.
+        </footer>
+    </div>
+</div>
+
+<script>
+    // ---------- Хранилище состояния ----------
+    let activeVisitStart = null;        // объект Date начала визита
+    const STORAGE_KEY = 'timecafe_active_start';
+
+    // DOM элементы
+    const startBtn = document.getElementById('startBtn');
+    const endBtn = document.getElementById('endBtn');
+    const statusLed = document.getElementById('statusLed');
+    const statusTextSpan = document.getElementById('statusText');
+    const totalAmountSpan = document.getElementById('totalAmount');
+    const infoMessageSpan = document.getElementById('infoMessage');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+
+    // ---------- Вспомогательные функции ----------
+    function isWeekend(date) {
+        const day = date.getDay();
+        return day === 0 || day === 6; // 0 воскресенье, 6 суббота
+    }
+
+    // Проверка, находится ли момент времени в рабочих часах для данного дня
+    function isWithinWorkingHours(date) {
+        const day = date.getDay();
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const timeInMinutes = hours * 60 + minutes;
+        
+        if (day === 0 || day === 6) { // выходные
+            const startWork = 10 * 60;   // 10:00
+            const endWork = 22 * 60;     // 22:00
+            return timeInMinutes >= startWork && timeInMinutes < endWork;
+        } else { // будни пн-пт
+            const startWork = 12 * 60;   // 12:00
+            const endWork = 22 * 60;     // 22:00
+            return timeInMinutes >= startWork && timeInMinutes < endWork;
+        }
+    }
+    // Получить ставку за минуту в конкретный момент времени (руб/мин)
+    function getRateAtMoment(date) {
+        const weekend = isWeekend(date);
+        if (weekend) return 4.0;
+        
+        // будни
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const totalMinutes = hours * 60 + minutes;
+        // рабочий диапазон уже проверен, но на всякий случай
+        if (totalMinutes >= 12*60 && totalMinutes < 16*60) {
+            return 2.5;
+        } else if (totalMinutes >= 16*60 && totalMinutes < 22*60) {
+            return 4.0;
+        }
+        // если вдруг время вне рабочего (не должно случиться)
+        return 0;
+    }
+    // РАСЧЕТ СТОИМОСТИ: старт, конец (Date объекты)
+    // Возвращает { cost: number, error: string|null }
+    function calculateVisitCost(startDate, endDate) {
+        // 1. Проверка корректности дат
+        if (!startDate || !endDate) return { cost: 0, error: 'Некорректные даты' };
+        if (startDate >= endDate) return { cost: 0, error: 'Время окончания должно быть позже начала' };
+        
+        // 2. Рабочие часы для старта и окончания (оба должны быть внутри)
+        if (!isWithinWorkingHours(startDate)) {
+            return { cost: 0, error: 'Начало визита вне рабочего времени кафе' };
+        }
+        if (!isWithinWorkingHours(endDate)) {
+            return { cost: 0, error: 'Завершение визита возможно только в рабочие часы (до 22:00)' };
+        }
+        
+        // дополнительная проверка, что даты одного дня (визит не может переходить через полночь)
+        const startDayStr = startDate.toDateString();
+        const endDayStr = endDate.toDateString();
+        if (startDayStr !== endDayStr) {
+            return { cost: 0, error: 'Визит не может длиться дольше рабочего дня. Завершите визит до 22:00' };
+        }
+        
+        const weekend = isWeekend(startDate);
+        const totalMinutes = (endDate - startDate) / (1000 * 60);
+        
+        // Первые 60 минут всегда стоят 300 ₽ (даже если визит короче)
+        const firstHourCost = 300;
+        let extraCost = 0;
+        
+        if (totalMinutes > 60) {
+            const extraMinutesCount = totalMinutes - 60; // минуты после первого часа
+            const startOfExtra = new Date(startDate.getTime() + 60 * 60 * 1000); // момент, когда начинаются доп минуты
+            
+            // Итерируем по каждой минуте после первого часа
+            let currentMoment = new Date(startOfExtra);
+            const endMoment = new Date(endDate);
+            
+            // для производительности: если интервал большой (до 10 часов = 600 итераций) — абсолютно норм.
+            while (currentMoment < endMoment) {
+                const rate = getRateAtMoment(currentMoment);
+                extraCost += rate;
+                currentMoment = new Date(currentMoment.getTime() + 60 * 1000);
+            }
+        }
+        
+        let totalRaw = firstHourCost + extraCost;
+        // Применяем стоп-чек
+        const stopCheck = weekend ? 900 : 1300;
+        let finalCost = Math.min(totalRaw, stopCheck);
+        // Округление до двух знаков (копейки не нужны, рубли)
+        finalCost = Math.round(finalCost);
+        
+        return { cost: finalCost, error: null };
+    }
+    
+    // Завершить визит (рассчитать и отобразить сумму)
+    function finishVisit() {
+        if (!activeVisitStart) {
+            infoMessageSpan.innerText = 'Нет активного визита.';
+            return;
+        }
+        
+        const now = new Date();
+        const { cost, error } = calculateVisitCost(activeVisitStart, now);
+        
+        if (error) {
+            infoMessageSpan.innerText = `❌ Ошибка: ${error}`;
+            totalAmountSpan.innerText = '0 ₽';
+            return;
+        }
+        
+        // Успешный расчёт
+        totalAmountSpan.innerHTML = `${cost} <span>₽</span>`;
+        infoMessageSpan.innerHTML = `✅ Визит завершён. Сумма к оплате: ${cost} ₽ (стоп-чек ${isWeekend(activeVisitStart) ? '900' : '1300'} ₽)`;
+        
+        // Сбрасываем визит
+        clearActiveVisit();
+        updateUIByState();
+    }
+    
+    // Начать новый визит
+    function startVisit() {
+        if (activeVisitStart) {
+            infoMessageSpan.innerText = 'Визит уже активен. Завершите текущий, чтобы начать новый.';
+            return;
+        }
+        
+        const now = new Date();
+        // Проверка, что сейчас рабочие часы
+        if (!isWithinWorkingHours(now)) {
+            infoMessageSpan.innerText = '⏰ Кафе сейчас закрыто. Ознакомьтесь с расписанием: выходные 10:00–22:00, будни 12:00–22:00.';
+            return;
+        }
+        
+        // Устанавливаем активный визит
+        activeVisitStart = now;
+        localStorage.setItem(STORAGE_KEY, activeVisitStart.toISOString());
+        updateUIByState();
+        infoMessageSpan.innerHTML = '🎉 Визит начат! Таймер запущен. Не забудьте нажать «Завершить визит» при выходе.';
+        totalAmountSpan.innerHTML = '0 ₽';  // сбрасываем предыдущую сумму
+    }
+    
+    // Очистить состояние визита
+    function clearActiveVisit() {
+        activeVisitStart = null;
+        localStorage.removeItem(STORAGE_KEY);
+    }
+    
+    // Обновить UI (кнопки, статус, led)
+    function updateUIByState() {
+        const isActive = activeVisitStart !== null;
+        if (isActive) {
+            statusLed.classList.add('active');
+            const startTimeStr = activeVisitStart.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+            statusTextSpan.innerHTML = `🟢 Визит активен (начало в ${startTimeStr})`;
+            startBtn.disabled = true;
+            endBtn.disabled = false;
+        } else {
+            statusLed.classList.remove('active');
+            statusTextSpan.innerHTML = '⚪ Нет активного визита';
+            startBtn.disabled = false;
+            endBtn.disabled = true;
+        }
+    }
+    
+    // Обновление текущего времени на экране (для удобства)
+    function updateCurrentTimeDisplay() {
+        const now = new Date();
+        const options = { weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+        let formatted = now.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const dayName = now.toLocaleDateString('ru-RU', { weekday: 'short' });
+        currentTimeDisplay.innerHTML = `<i class="far fa-clock"></i> ${dayName}, ${formatted}`;
+    }
+    
+    // Восстановление визита после перезагрузки
+    function restoreVisitFromStorage() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            const parsedStart = new Date(stored);
+            if (!isNaN(parsedStart.getTime())) {
+                // Доп. проверка: не слишком ли старый визит? Если дата старта была вчера — лучше сбросить
+                const now = new Date();
+                const startDay = parsedStart.toDateString();
+                const today = now.toDateString();
+                if (startDay !== today) {
+                    // Визит с прошлого дня – аномалия, сбрасываем
+                    localStorage.removeItem(STORAGE_KEY);
+                    return;
+                }
+                // Также проверим, что старт был в рабочие часы (по логике)
+                if (!isWithinWorkingHours(parsedStart)) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    return;
+                }
+                activeVisitStart = parsedStart;
+                updateUIByState();
+                infoMessageSpan.innerHTML = '⏳ Активный визит восстановлен. Нажмите «Завершить визит», когда покинете кафе.';
+            } else {
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        }
+    }
+    
+    // ---------- Дополнительно: для предотвращения некоректного завершения при перезагрузке страницы без финиша ----------
+    // При загрузке проверяем, и если активный визит существует, показываем статус.
+    
+    // Инициализация событий
+    function init() {
+        restoreVisitFromStorage();
+        updateUIByState();
+        
+        startBtn.addEventListener('click', startVisit);
+        endBtn.addEventListener('click', finishVisit);
+        
+        // Обновляем часы каждую секунду (чисто для удобства)
+        setInterval(() => {
+            updateCurrentTimeDisplay();
+            // Если визит активен, можно показать напоминание (но не обязательно)
+            if (activeVisitStart) {
+                // Дополнительно можно ничего не менять
+            }
+        }, 1000);
+        
+        updateCurrentTimeDisplay();
+        
+        // Если пользователь попытается закрыть вкладку с активным визитом — предупредим (но это не критично)
+        window.addEventListener('beforeunload', (e) => {
+            if (activeVisitStart) {
+                const message = 'У вас активный визит! Не забудьте завершить его и оплатить.';
+                e.preventDefault();
+                e.returnValue = message;
+                return message;
+            }
+        });
+    }
+    
+    init();
+</script>
+</body>
+</html>
