@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Козюкофе — Тайм-кафе</title>
     <!-- Google Fonts + Font Awesome -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         * {
@@ -246,6 +246,22 @@
             font-weight: 600;
         }
 
+        .visit-details {
+            margin-top: 20px;
+            padding: 16px 20px;
+            background: #fef7e6;
+            border-radius: 36px;
+            font-size: 1rem;
+            color: #2d3e50;
+            text-align: center;
+            border: 1px solid #ffe3b5;
+        }
+
+        .visit-details i {
+            color: #b45353;
+            margin-right: 8px;
+        }
+
         .message {
             margin-top: 16px;
             font-size: 0.9rem;
@@ -265,6 +281,7 @@
             .control-panel { padding: 32px 20px; }
             .total-amount { font-size: 2.5rem; }
             .status-area { flex-direction: column; align-items: flex-start; }
+            .visit-details { font-size: 0.85rem; }
         }
     </style>
 </head>
@@ -317,11 +334,15 @@
             <div class="result-area">
                 <div class="total-label">Сумма к оплате</div>
                 <div class="total-amount" id="totalAmount">0 ₽</div>
+                <div class="visit-details" id="visitDetails" style="display: none;">
+                    <i class="far fa-clock"></i> <span id="timeRange"></span><br>
+                    <i class="fas fa-hourglass-half"></i> Длительность: <span id="durationMinutes"></span> мин
+                </div>
                 <div class="message" id="infoMessage"></div>
             </div>
         </div>
         <footer>
-            <i class="fas fa-info-circle"></i> Визит можно начать только в рабочие часы. После завершения сумма фиксируется согласно тарифам.
+            <i class="fas fa-info-circle"></i> Визит можно начать только в рабочие часы. После завершения отобразится интервал и длительность.
         </footer>
     </div>
 </div>
@@ -339,47 +360,40 @@
     const totalAmountSpan = document.getElementById('totalAmount');
     const infoMessageSpan = document.getElementById('infoMessage');
     const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+    const visitDetailsDiv = document.getElementById('visitDetails');
+    const timeRangeSpan = document.getElementById('timeRange');
+    const durationMinutesSpan = document.getElementById('durationMinutes');
 
     // ---------- Вспомогательные функции ----------
     function isWeekend(date) {
         const day = date.getDay();
-        return day === 0 || day === 6; // 0 воскресенье, 6 суббота
+        return day === 0 || day === 6;
     }
 
-    // Проверка, находится ли момент времени в рабочих часах для данного дня
     function isWithinWorkingHours(date) {
         const day = date.getDay();
-        const hours = date.getHours();
-        const minutes = date.getMinutes();
-        const timeInMinutes = hours * 60 + minutes;
+        const timeInMinutes = date.getHours() * 60 + date.getMinutes();
         
         if (day === 0 || day === 6) { // выходные
-            const startWork = 10 * 60;   // 10:00
-            const endWork = 22 * 60;     // 22:00
+            const startWork = 10 * 60;
+            const endWork = 22 * 60;
             return timeInMinutes >= startWork && timeInMinutes < endWork;
-        } else { // будни пн-пт
-            const startWork = 12 * 60;   // 12:00
-            const endWork = 22 * 60;     // 22:00
+        } else {
+            const startWork = 12 * 60;
+            const endWork = 22 * 60;
             return timeInMinutes >= startWork && timeInMinutes < endWork;
         }
     }
 
-    // Получить ставку за минуту в конкретный момент времени (руб/мин)
     function getRateAtMoment(date) {
-        const weekend = isWeekend(date);
-        if (weekend) return 4.0;
+        if (isWeekend(date)) return 4.0;
         
-        // будни
         const totalMinutes = date.getHours() * 60 + date.getMinutes();
-        if (totalMinutes >= 12*60 && totalMinutes < 16*60) {
-            return 2.5;
-        } else if (totalMinutes >= 16*60 && totalMinutes < 22*60) {
-            return 4.0;
-        }
+        if (totalMinutes >= 12*60 && totalMinutes < 16*60) return 2.5;
+        if (totalMinutes >= 16*60 && totalMinutes < 22*60) return 4.0;
         return 0;
     }
 
-    // РАСЧЕТ СТОИМОСТИ: старт, конец (Date объекты)
     function calculateVisitCost(startDate, endDate) {
         if (!startDate || !endDate) return { cost: 0, error: 'Некорректные даты' };
         if (startDate >= endDate) return { cost: 0, error: 'Время окончания должно быть позже начала' };
@@ -391,9 +405,7 @@
             return { cost: 0, error: 'Завершение визита возможно только в рабочие часы (до 22:00)' };
         }
         
-        const startDayStr = startDate.toDateString();
-        const endDayStr = endDate.toDateString();
-        if (startDayStr !== endDayStr) {
+        if (startDate.toDateString() !== endDate.toDateString()) {
             return { cost: 0, error: 'Визит не может длиться дольше рабочего дня. Завершите визит до 22:00' };
         }
         
@@ -404,46 +416,58 @@
         let extraCost = 0;
         
         if (totalMinutes > 60) {
-            const extraMinutesCount = totalMinutes - 60;
             const startOfExtra = new Date(startDate.getTime() + 60 * 60 * 1000);
             let currentMoment = new Date(startOfExtra);
-            const endMoment = new Date(endDate);
-            
-            while (currentMoment < endMoment) {
-                const rate = getRateAtMoment(currentMoment);
-                extraCost += rate;
+            while (currentMoment < endDate) {
+                extraCost += getRateAtMoment(currentMoment);
                 currentMoment = new Date(currentMoment.getTime() + 60 * 1000);
             }
         }
         
         let totalRaw = firstHourCost + extraCost;
-        // Стоп-чек: для выходных 1300, для будней 900
         const stopCheck = weekend ? 1300 : 900;
         let finalCost = Math.min(totalRaw, stopCheck);
         finalCost = Math.round(finalCost);
         
-        return { cost: finalCost, error: null };
+        return { 
+            cost: finalCost, 
+            error: null,
+            totalMinutes: Math.floor(totalMinutes),
+            startTime: startDate,
+            endTime: endDate
+        };
     }
     
     function finishVisit() {
         if (!activeVisitStart) {
             infoMessageSpan.innerText = 'Нет активного визита.';
+            visitDetailsDiv.style.display = 'none';
             return;
         }
         
         const now = new Date();
-        const { cost, error } = calculateVisitCost(activeVisitStart, now);
+        const result = calculateVisitCost(activeVisitStart, now);
         
-        if (error) {
-            infoMessageSpan.innerText = `❌ Ошибка: ${error}`;
-            totalAmountSpan.innerText = '0 ₽';
+        if (result.error) {
+            infoMessageSpan.innerText = `❌ Ошибка: ${result.error}`;
+            totalAmountSpan.innerHTML = '0 ₽';
+            visitDetailsDiv.style.display = 'none';
             return;
         }
         
-        totalAmountSpan.innerHTML = `${cost} <span>₽</span>`;
+        // Отображаем сумму
+        totalAmountSpan.innerHTML = `${result.cost} <span>₽</span>`;
+        
+        // Формируем детали визита: интервал и длительность
+        const startTimeStr = result.startTime.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+        const endTimeStr = result.endTime.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+        timeRangeSpan.innerHTML = `${startTimeStr} – ${endTimeStr}`;
+        durationMinutesSpan.innerHTML = result.totalMinutes;
+        visitDetailsDiv.style.display = 'block';
+        
         const weekendFlag = isWeekend(activeVisitStart);
         const stopText = weekendFlag ? '1300' : '900';
-        infoMessageSpan.innerHTML = `✅ Визит завершён. Сумма к оплате: ${cost} ₽ (стоп-чек ${stopText} ₽)`;
+        infoMessageSpan.innerHTML = `✅ Визит завершён. Сумма к оплате: ${result.cost} ₽ (стоп-чек ${stopText} ₽)`;
         
         clearActiveVisit();
         updateUIByState();
@@ -466,6 +490,7 @@
         updateUIByState();
         infoMessageSpan.innerHTML = '🎉 Визит начат! Не забудьте нажать «Завершить визит» при выходе.';
         totalAmountSpan.innerHTML = '0 ₽';
+        visitDetailsDiv.style.display = 'none'; // скрываем прошлые детали
     }
     
     function clearActiveVisit() {
@@ -502,9 +527,7 @@
             const parsedStart = new Date(stored);
             if (!isNaN(parsedStart.getTime())) {
                 const now = new Date();
-                const startDay = parsedStart.toDateString();
-                const today = now.toDateString();
-                if (startDay !== today) {
+                if (parsedStart.toDateString() !== now.toDateString()) {
                     localStorage.removeItem(STORAGE_KEY);
                     return;
                 }
@@ -515,6 +538,7 @@
                 activeVisitStart = parsedStart;
                 updateUIByState();
                 infoMessageSpan.innerHTML = '⏳ Активный визит восстановлен. Нажмите «Завершить визит», когда покинете кафе.';
+                visitDetailsDiv.style.display = 'none';
             } else {
                 localStorage.removeItem(STORAGE_KEY);
             }
@@ -528,10 +552,7 @@
         startBtn.addEventListener('click', startVisit);
         endBtn.addEventListener('click', finishVisit);
         
-        setInterval(() => {
-            updateCurrentTimeDisplay();
-        }, 1000);
-        
+        setInterval(updateCurrentTimeDisplay, 1000);
         updateCurrentTimeDisplay();
         
         window.addEventListener('beforeunload', (e) => {
