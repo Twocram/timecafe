@@ -308,8 +308,8 @@
                     <h3><i class="fas fa-calendar-day"></i> Будни (пн–пт)</h3>
                     <ul>
                         <li><i class="fas fa-clock"></i> 12:00 – 22:00</li>
-                        <li><i class="fas fa-sun"></i> 12:00–16:00 → 2.5 ₽/мин</li>
-                        <li><i class="fas fa-moon"></i> 16:00–22:00 → 4 ₽/мин</li>
+                        <li><i class="fas fa-sun"></i> 12:00–18:00 → 2.5 ₽/мин</li>
+                        <li><i class="fas fa-moon"></i> 18:00–22:00 → 4 ₽/мин</li>
                         <li><i class="fas fa-hourglass-start"></i> Первый час — 300 ₽</li>
                         <li><i class="fas fa-stop-circle"></i> Стоп-чек: <strong>900 ₽</strong></li>
                     </ul>
@@ -389,8 +389,8 @@
         if (isWeekend(date)) return 4.0;
         
         const totalMinutes = date.getHours() * 60 + date.getMinutes();
-        if (totalMinutes >= 12*60 && totalMinutes < 16*60) return 2.5;
-        if (totalMinutes >= 16*60 && totalMinutes < 22*60) return 4.0;
+        if (totalMinutes >= 12*60 && totalMinutes < 18*60) return 2.5;
+        if (totalMinutes >= 18*60 && totalMinutes < 22*60) return 4.0;
         return 0;
     }
 
@@ -436,6 +436,22 @@
             startTime: startDate,
             endTime: endDate
         };
+    }
+
+    function updateCurrentVisitPreview() {
+        if (!activeVisitStart) {
+            return;
+        }
+
+        const now = new Date();
+        const previewResult = calculateVisitCost(activeVisitStart, now);
+
+        if (previewResult.error) {
+            totalAmountSpan.innerHTML = '300 <span>₽</span>';
+            return;
+        }
+
+        totalAmountSpan.innerHTML = `${previewResult.cost} <span>₽</span>`;
     }
     
     function finishVisit() {
@@ -489,7 +505,7 @@
         localStorage.setItem(STORAGE_KEY, activeVisitStart.toISOString());
         updateUIByState();
         infoMessageSpan.innerHTML = '🎉 Визит начат! Не забудьте нажать «Завершить визит» при выходе.';
-        totalAmountSpan.innerHTML = '0 ₽';
+        totalAmountSpan.innerHTML = '300 <span>₽</span>';
         visitDetailsDiv.style.display = 'none'; // скрываем прошлые детали
     }
     
@@ -539,6 +555,7 @@
                 updateUIByState();
                 infoMessageSpan.innerHTML = '⏳ Активный визит восстановлен. Нажмите «Завершить визит», когда покинете кафе.';
                 visitDetailsDiv.style.display = 'none';
+                updateCurrentVisitPreview();
             } else {
                 localStorage.removeItem(STORAGE_KEY);
             }
@@ -552,8 +569,12 @@
         startBtn.addEventListener('click', startVisit);
         endBtn.addEventListener('click', finishVisit);
         
-        setInterval(updateCurrentTimeDisplay, 1000);
+        setInterval(() => {
+            updateCurrentTimeDisplay();
+            updateCurrentVisitPreview();
+        }, 1000);
         updateCurrentTimeDisplay();
+        updateCurrentVisitPreview();
         
         window.addEventListener('beforeunload', (e) => {
             if (activeVisitStart) {
