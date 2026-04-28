@@ -376,11 +376,11 @@
         
         if (day === 0 || day === 6) { // выходные
             const startWork = 10 * 60;
-            const endWork = 22 * 60;
+            const endWork = 23 * 60;
             return timeInMinutes >= startWork && timeInMinutes < endWork;
         } else {
             const startWork = 12 * 60;
-            const endWork = 22 * 60;
+            const endWork = 23 * 60;
             return timeInMinutes >= startWork && timeInMinutes < endWork;
         }
     }
@@ -390,7 +390,7 @@
         
         const totalMinutes = date.getHours() * 60 + date.getMinutes();
         if (totalMinutes >= 12*60 && totalMinutes < 18*60) return 2.5;
-        if (totalMinutes >= 18*60 && totalMinutes < 22*60) return 4.0;
+        if (totalMinutes >= 18*60 && totalMinutes < 23*60) return 4.0;
         return 0;
     }
 
@@ -402,11 +402,11 @@
             return { cost: 0, error: 'Начало визита вне рабочего времени кафе' };
         }
         if (!isWithinWorkingHours(endDate)) {
-            return { cost: 0, error: 'Завершение визита возможно только в рабочие часы (до 22:00)' };
+            return { cost: 0, error: 'Завершение визита возможно только в рабочие часы (до 23:00)' };
         }
         
         if (startDate.toDateString() !== endDate.toDateString()) {
-            return { cost: 0, error: 'Визит не может длиться дольше рабочего дня. Завершите визит до 22:00' };
+            return { cost: 0, error: 'Визит не может длиться дольше рабочего дня. Завершите визит до 23:00' };
         }
         
         const weekend = isWeekend(startDate);
