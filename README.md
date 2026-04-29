@@ -141,3 +141,144 @@ docker compose down -v
 - логировать изменения статусов платежей
 - добавить webhook от YooKassa, если понадобится более надёжное подтверждение оплаты
 - вынести секреты только в переменные хостинга, без хранения в локальных конфигурациях прод-среды
+
+## Деплой на VPS
+
+Ниже самый прямой вариант для VPS: `Docker Compose + Caddy + PostgreSQL`.
+
+Предположение:
+- VPS на Ubuntu
+- у вас есть домен
+- DNS-запись домена уже указывает на IP сервера
+
+### Что будет крутиться
+
+- `app` - ваше Node.js-приложение
+- `db` - PostgreSQL в Docker volume
+- `caddy` - reverse proxy с автоматическим `HTTPS`
+
+Используются файлы:
+- [docker-compose.prod.yml](/Users/artyom/Documents/projects/vika/docker-compose.prod.yml:1)
+- [Caddyfile](/Users/artyom/Documents/projects/vika/Caddyfile:1)
+
+### 1. Подготовьте сервер
+
+Подключитесь по SSH:
+
+```bash
+ssh user@your-server-ip
+```
+
+Обновите систему:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+Установите Docker и compose plugin:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+```
+
+После этого лучше переподключиться по SSH.
+
+Проверьте:
+
+```bash
+docker --version
+docker compose version
+```
+
+### 2. Откройте порты
+
+Если включён `ufw`:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+### 3. Скопируйте проект на сервер
+
+Если репозиторий в Git:
+
+```bash
+git clone <repo-url> vika
+cd vika
+```
+
+Или скопируйте локальную папку на сервер через `scp`/`rsync`.
+
+### 4. Создайте продовый `.env`
+
+На сервере:
+
+```bash
+cp .env.example .env
+```
+
+Минимум, что нужно заполнить:
+
+```env
+POSTGRES_DB=vika
+POSTGRES_USER=vika
+POSTGRES_PASSWORD=very_strong_password
+APP_DOMAIN=your-domain.example
+YOOKASSA_SHOP_ID=...
+YOOKASSA_SECRET_KEY=...
+YOOKASSA_RETURN_URL=https://your-domain.example/?payment=return
+```
+
+Для VPS через `docker-compose.prod.yml` переменная `DATABASE_URL` вручную не нужна, она собирается автоматически из `POSTGRES_*`.
+
+### 5. Запустите прод
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml up -d --build
+```
+
+Проверьте контейнеры:
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+```
+
+Проверьте логи:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f app
+```
+
+### 6. Проверьте сайт и health endpoint
+
+Откройте:
+
+- `https://your-domain.example`
+- `https://your-domain.example/health`
+
+Если DNS уже указывает на сервер, `Caddy` сам выпустит и продлит TLS-сертификат.
+
+### Как обновлять приложение
+
+На сервере:
+
+```bash
+git pull
+docker compose --env-file .env -f docker-compose.prod.yml up -d --build
+```
+
+### Как сделать автозапуск после перезагрузки
+
+В compose уже стоит `restart: unless-stopped`, поэтому после рестарта Docker контейнеры поднимутся сами.
+
+### Что важно для продакшена
+
+- не публикуйте порт PostgreSQL наружу
+- используйте сложный `POSTGRES_PASSWORD`
+- `YOOKASSA_RETURN_URL` должен быть точно на боевом домене и через `https`
+- перед боевым запуском проверьте, что домен уже смотрит на VPS, иначе `Caddy` не сможет выпустить сертификат
