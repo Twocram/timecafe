@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import {
+    checkDatabaseHealth,
+    closeDatabase,
+    findPaymentIdByReturnToken,
+    initializeDatabase,
+    savePaymentSession,
+} from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,16 +48,38 @@ applyDotEnv();
 
 const {
     PORT = '3000',
+    DATABASE_URL,
+    PGHOST,
+    PGPORT = '5432',
+    PGUSER,
+    PGPASSWORD,
+    PGDATABASE,
     YOOKASSA_SHOP_ID,
     YOOKASSA_SECRET_KEY,
     YOOKASSA_RETURN_URL = `http://localhost:${PORT}/?payment=return`,
 } = process.env;
 
 const app = Fastify({ logger: true });
-const paymentReturnMap = new Map();
 
 await app.register(fastifyStatic, {
     root: __dirname,
+});
+
+function assertDatabaseConfig() {
+    if (DATABASE_URL) {
+        return;
+    }
+
+    if (!PGHOST || !PGUSER || !PGPASSWORD || !PGDATABASE || !PGPORT) {
+        throw new Error('Укажите DATABASE_URL или набор PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE');
+    }
+}
+
+assertDatabaseConfig();
+await initializeDatabase();
+
+app.addHook('onClose', async () => {
+    await closeDatabase();
 });
 
 function assertYooKassaConfig() {
@@ -142,7 +171,13 @@ app.post('/api/payments', {
 }, async (request, reply) => {
     try {
         const payment = await createYooKassaPayment(request.body);
-        paymentReturnMap.set(request.body.returnToken, payment.id);
+        await savePaymentSession({
+            returnToken: request.body.returnToken,
+            paymentId: payment.id,
+            amount: request.body.amount,
+            description: request.body.description,
+            metadata: request.body.metadata,
+        });
 
         return {
             id: payment.id,
@@ -169,16 +204,24 @@ app.get('/api/payments/lookup/:returnToken', {
         },
     },
 }, async (request, reply) => {
-    const paymentId = paymentReturnMap.get(request.params.returnToken);
+    try {
+        const paymentId = await findPaymentIdByReturnToken(request.params.returnToken);
 
-    if (!paymentId) {
-        reply.code(404);
+        if (!paymentId) {
+            reply.code(404);
+            return {
+                error: 'Платёж по ключу возврата не найден',
+            };
+        }
+
+        return { paymentId };
+    } catch (error) {
+        request.log.error(error);
+        reply.code(500);
         return {
-            error: 'Платёж по ключу возврата не найден',
+            error: error.message || 'Не удалось найти платёж по ключу возврата',
         };
     }
-
-    return { paymentId };
 });
 
 app.get('/api/payments/:paymentId', {
@@ -205,6 +248,25 @@ app.get('/api/payments/:paymentId', {
         reply.code(500);
         return {
             error: error.message || 'Не удалось получить статус платежа',
+        };
+    }
+});
+
+app.get('/health', async (_request, reply) => {
+    try {
+        assertDatabaseConfig();
+        await checkDatabaseHealth();
+
+        return {
+            ok: true,
+            database: 'up',
+        };
+    } catch (error) {
+        reply.code(503);
+        return {
+            ok: false,
+            database: 'down',
+            error: error.message,
         };
     }
 });

@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vika
+      POSTGRES_USER: vika
+      POSTGRES_PASSWORD: vika_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vika -d vika"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://vika:vika_password@db:5432/vika
+      DATABASE_SSL: "false"
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-your_shop_id}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-your_secret_key}
+      YOOKASSA_RETURN_URL: ${YOOKASSA_RETURN_URL:-http://localhost:3000/?payment=return}
+
+volumes:
+  postgres_data:
