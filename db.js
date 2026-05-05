@@ -16,6 +16,24 @@ function getSslConfig() {
     };
 }
 
+function getDatabaseHostname(databaseUrl) {
+    try {
+        return new URL(databaseUrl).hostname;
+    } catch {
+        return null;
+    }
+}
+
+function assertHostedDatabaseConfig({ DATABASE_URL, PGHOST }) {
+    const hostname = DATABASE_URL ? getDatabaseHostname(DATABASE_URL) : null;
+
+    if (hostname === 'db' || PGHOST === 'db') {
+        throw new Error(
+            'Хост БД "db" работает только внутри docker compose. Для Render укажите реальный managed PostgreSQL URL в DATABASE_URL или задайте PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE.',
+        );
+    }
+}
+
 function createPool() {
     const {
         DATABASE_URL,
@@ -26,6 +44,8 @@ function createPool() {
         PGDATABASE,
     } = process.env;
     const ssl = getSslConfig();
+
+    assertHostedDatabaseConfig({ DATABASE_URL, PGHOST });
 
     if (DATABASE_URL) {
         return new Pool({

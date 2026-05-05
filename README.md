@@ -30,6 +30,10 @@ DATABASE_SSL=false
 YOOKASSA_RETURN_URL=http://localhost:3000/?payment=return
 ```
 
+Важно:
+- хост `db` в `DATABASE_URL` работает только внутри `docker compose`
+- для Render, Railway и других managed-хостингов нужен внешний URL вашей PostgreSQL, а не `@db:5432`
+
 3. Поднимите проект:
 
 ```bash
@@ -114,6 +118,55 @@ PORT=3000
 - откройте `/health`
 - создайте тестовый платёж
 - убедитесь, что возврат с YooKassa обратно на сайт проходит корректно
+
+## Деплой на Render
+
+Рекомендуемая схема:
+- один `Web Service` для приложения из этого репозитория
+- одна managed `PostgreSQL` база в Render
+
+Что важно:
+- Render не использует ваш `docker-compose.yml`
+- hostname `db` из локального Docker на Render не существует
+- если в Render вручную указать `DATABASE_URL=postgresql://...@db:5432/...`, приложение упадёт с `getaddrinfo ENOTFOUND db`
+- в репозитории есть [render.yaml](/Users/artyom/Documents/projects/vika/render.yaml:1), поэтому проще создавать проект через `Blueprint`
+
+### 1. Создайте Blueprint из репозитория
+
+- в Render откройте `Blueprints` -> `New Blueprint Instance`
+- выберите этот репозиторий
+- Render поднимет `Web Service` и managed `PostgreSQL` по [render.yaml](/Users/artyom/Documents/projects/vika/render.yaml:1)
+
+### 2. Заполните секреты при первом создании
+
+- `YOOKASSA_SHOP_ID`
+- `YOOKASSA_SECRET_KEY`
+- `YOOKASSA_RETURN_URL`
+
+`DATABASE_URL` будет выставлен автоматически из managed Postgres.
+
+### 3. Что именно задаёт Blueprint
+
+В текущем [render.yaml](/Users/artyom/Documents/projects/vika/render.yaml:1):
+
+```env
+PORT=10000
+DATABASE_URL=<берётся из Render Postgres>
+DATABASE_SSL=false
+YOOKASSA_SHOP_ID=<запрашивается в Render>
+YOOKASSA_SECRET_KEY=<запрашивается в Render>
+YOOKASSA_RETURN_URL=<запрашивается в Render>
+```
+
+Примечания:
+- не используйте `@db:5432` в `DATABASE_URL`
+- `DATABASE_SSL=false` выставлен специально, потому что Blueprint использует внутренний `connectionString` Render по private network
+- если потом захотите подключаться к внешнему URL базы вручную, проверьте, нужен ли для него `DATABASE_SSL=true`
+
+### 4. Проверьте после деплоя
+
+- откройте `/health`
+- если сервис не стартует, первым делом проверьте, что сервис был создан именно из Blueprint, а не со старым ручным `DATABASE_URL`
 
 ## Полезные команды
 
