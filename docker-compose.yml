@@ -30,6 +30,8 @@ services:
       YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID:-your_shop_id}
       YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY:-your_secret_key}
       YOOKASSA_RETURN_URL: ${YOOKASSA_RETURN_URL:-http://localhost:3000/?payment=return}
+      IS_TESTING: ${IS_TESTING:-false}
+      GOOGLE_SHEETS_WEBHOOK_URL: ${GOOGLE_SHEETS_WEBHOOK_URL}
 
 volumes:
   postgres_data:

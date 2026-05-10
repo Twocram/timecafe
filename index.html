@@ -50,6 +50,20 @@
                 <div class="time-info" id="currentTimeDisplay"></div>
             </div>
 
+            <div class="guest-panel">
+                <label class="field-label" for="customerName">Имя гостя</label>
+                <input
+                    class="text-input"
+                    id="customerName"
+                    name="customerName"
+                    type="text"
+                    maxlength="80"
+                    autocomplete="name"
+                    placeholder="Например, Артём"
+                >
+                <div class="field-hint">Имя попадёт в платёж и в Google Sheets таблицу.</div>
+            </div>
+
             <div class="btn-group">
                 <button class="btn btn-start" id="startBtn"><i class="fas fa-play"></i> Начать визит</button>
                 <button class="btn btn-end" id="endBtn" disabled><i class="fas fa-stop"></i> Завершить визит</button>
@@ -60,6 +74,7 @@
                 <div class="total-label">Сумма к оплате</div>
                 <div class="total-amount" id="totalAmount">0 ₽</div>
                 <div class="visit-details" id="visitDetails" style="display: none;">
+                    <i class="fas fa-user"></i> Гость: <span id="customerNameDisplay"></span><br>
                     <i class="far fa-clock"></i> <span id="timeRange"></span><br>
                     <i class="fas fa-hourglass-half"></i> Длительность: <span id="durationMinutes"></span> мин
                 </div>

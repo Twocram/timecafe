@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,41 +6,16 @@ import fastifyStatic from '@fastify/static';
 import {
     checkDatabaseHealth,
     closeDatabase,
-    findPaymentIdByReturnToken,
+    findPaymentSessionByReturnToken,
     initializeDatabase,
     savePaymentSession,
 } from './db.js';
+import { applyDotEnv } from './env.js';
+import { syncSucceededPaymentToGoogleSheets } from './paymentSync.js';
+import { createYooKassaPayment, getYooKassaPayment } from './yookassa.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-function applyDotEnv() {
-    const envPath = path.join(__dirname, '.env');
-    if (!existsSync(envPath)) {
-        return;
-    }
-
-    const fileContents = readFileSync(envPath, 'utf8');
-
-    for (const rawLine of fileContents.split('\n')) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith('#')) {
-            continue;
-        }
-
-        const separatorIndex = line.indexOf('=');
-        if (separatorIndex === -1) {
-            continue;
-        }
-
-        const key = line.slice(0, separatorIndex).trim();
-        const value = line.slice(separatorIndex + 1).trim();
-
-        if (!(key in process.env)) {
-            process.env[key] = value;
-        }
-    }
-}
 
 applyDotEnv();
 
@@ -54,9 +27,6 @@ const {
     PGUSER,
     PGPASSWORD,
     PGDATABASE,
-    YOOKASSA_SHOP_ID,
-    YOOKASSA_SECRET_KEY,
-    YOOKASSA_RETURN_URL = `http://localhost:${PORT}/?payment=return`,
 } = process.env;
 
 const app = Fastify({ logger: true });
@@ -75,6 +45,21 @@ function assertDatabaseConfig() {
     }
 }
 
+function normalizeCustomerName(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeBoolean(value) {
+    return ['1', 'true', 'yes', 'on', 'require'].includes(String(value).toLowerCase());
+}
+
+function isPaymentWebhookEvent(payload) {
+    return payload?.type === 'notification'
+        && typeof payload?.event === 'string'
+        && payload?.object
+        && typeof payload.object === 'object';
+}
+
 assertDatabaseConfig();
 await initializeDatabase();
 
@@ -82,84 +67,15 @@ app.addHook('onClose', async () => {
     await closeDatabase();
 });
 
-function assertYooKassaConfig() {
-    if (!YOOKASSA_SHOP_ID || !YOOKASSA_SECRET_KEY) {
-        throw new Error('YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY должны быть указаны в .env');
-    }
-}
-
-function getYooKassaAuthHeader() {
-    const credentials = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET_KEY}`).toString('base64');
-    return `Basic ${credentials}`;
-}
-
-function buildReturnUrl(returnToken) {
-    const returnUrl = new URL(YOOKASSA_RETURN_URL);
-    returnUrl.searchParams.set('payment', 'return');
-    returnUrl.searchParams.set('payment_key', returnToken);
-    return returnUrl.toString();
-}
-
-async function createYooKassaPayment({ amount, description, metadata, returnToken }) {
-    assertYooKassaConfig();
-
-    const response = await fetch('https://api.yookassa.ru/v3/payments', {
-        method: 'POST',
-        headers: {
-            Authorization: getYooKassaAuthHeader(),
-            'Content-Type': 'application/json',
-            'Idempotence-Key': randomUUID(),
-        },
-        body: JSON.stringify({
-            amount: {
-                value: Number(amount).toFixed(2),
-                currency: 'RUB',
-            },
-            capture: true,
-            confirmation: {
-                type: 'redirect',
-                return_url: buildReturnUrl(returnToken),
-            },
-            description,
-            metadata,
-        }),
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ошибка ЮKassa: ${response.status} ${errorText}`);
-    }
-
-    return response.json();
-}
-
-async function getYooKassaPayment(paymentId) {
-    assertYooKassaConfig();
-
-    const response = await fetch(`https://api.yookassa.ru/v3/payments/${paymentId}`, {
-        method: 'GET',
-        headers: {
-            Authorization: getYooKassaAuthHeader(),
-            'Content-Type': 'application/json',
-        },
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ошибка ЮKassa: ${response.status} ${errorText}`);
-    }
-
-    return response.json();
-}
-
 app.post('/api/payments', {
     schema: {
         body: {
             type: 'object',
-            required: ['amount', 'description'],
+            required: ['amount', 'description', 'customerName'],
             properties: {
                 amount: { type: 'number', minimum: 1 },
                 description: { type: 'string', minLength: 1 },
+                customerName: { type: 'string', minLength: 1, maxLength: 80 },
                 returnToken: { type: 'string', minLength: 1 },
                 metadata: {
                     type: 'object',
@@ -170,13 +86,25 @@ app.post('/api/payments', {
     },
 }, async (request, reply) => {
     try {
+        const customerName = normalizeCustomerName(request.body.customerName);
+        if (!customerName) {
+            reply.code(400);
+            return {
+                error: 'Укажите имя гостя',
+            };
+        }
+
         const payment = await createYooKassaPayment(request.body);
         await savePaymentSession({
             returnToken: request.body.returnToken,
             paymentId: payment.id,
+            customerName,
             amount: request.body.amount,
             description: request.body.description,
-            metadata: request.body.metadata,
+            metadata: {
+                ...(request.body.metadata ?? {}),
+                customer_name: customerName,
+            },
         });
 
         return {
@@ -205,16 +133,22 @@ app.get('/api/payments/lookup/:returnToken', {
     },
 }, async (request, reply) => {
     try {
-        const paymentId = await findPaymentIdByReturnToken(request.params.returnToken);
+        const session = await findPaymentSessionByReturnToken(request.params.returnToken);
 
-        if (!paymentId) {
+        if (!session?.paymentId) {
             reply.code(404);
             return {
                 error: 'Платёж по ключу возврата не найден',
             };
         }
 
-        return { paymentId };
+        return {
+            paymentId: session.paymentId,
+            customerName: session.customerName,
+            amount: session.amount,
+            description: session.description,
+            metadata: session.metadata,
+        };
     } catch (error) {
         request.log.error(error);
         reply.code(500);
@@ -237,6 +171,17 @@ app.get('/api/payments/:paymentId', {
 }, async (request, reply) => {
     try {
         const payment = await getYooKassaPayment(request.params.paymentId);
+        try {
+            await syncSucceededPaymentToGoogleSheets({
+                payment,
+                logger: request.log,
+            });
+        } catch (error) {
+            request.log.error({
+                err: error,
+                paymentId: request.params.paymentId,
+            }, 'Google Sheets sync failed');
+        }
 
         return {
             id: payment.id,
@@ -248,6 +193,54 @@ app.get('/api/payments/:paymentId', {
         reply.code(500);
         return {
             error: error.message || 'Не удалось получить статус платежа',
+        };
+    }
+});
+
+app.post('/api/yookassa/webhook', {
+    schema: {
+        body: {
+            type: 'object',
+            required: ['type', 'event', 'object'],
+            properties: {
+                type: { type: 'string' },
+                event: { type: 'string' },
+                object: { type: 'object' },
+            },
+            additionalProperties: true,
+        },
+    },
+}, async (request, reply) => {
+    if (!isPaymentWebhookEvent(request.body)) {
+        reply.code(400);
+        return {
+            ok: false,
+            error: 'Некорректное тело webhook',
+        };
+    }
+
+    try {
+        if (request.body.event === 'payment.succeeded') {
+            await syncSucceededPaymentToGoogleSheets({
+                payment: request.body.object,
+                logger: request.log,
+            });
+        }
+
+        return {
+            ok: true,
+        };
+    } catch (error) {
+        request.log.error({
+            err: error,
+            event: request.body.event,
+            paymentId: request.body.object?.id,
+        }, 'YooKassa webhook handling failed');
+
+        reply.code(500);
+        return {
+            ok: false,
+            error: error.message || 'Не удалось обработать webhook YooKassa',
         };
     }
 });
@@ -270,6 +263,10 @@ app.get('/health', async (_request, reply) => {
         };
     }
 });
+
+app.get('/api/config', async () => ({
+    isTesting: normalizeBoolean(process.env.IS_TESTING),
+}));
 
 app.get('/', async (_request, reply) => reply.sendFile('index.html'));
 

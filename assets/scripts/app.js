@@ -5,6 +5,8 @@ const elements = {
     startBtn: document.getElementById('startBtn'),
     endBtn: document.getElementById('endBtn'),
     payBtn: document.getElementById('payBtn'),
+    customerName: document.getElementById('customerName'),
+    customerNameDisplay: document.getElementById('customerNameDisplay'),
     statusLed: document.getElementById('statusLed'),
     statusText: document.getElementById('statusText'),
     totalAmount: document.getElementById('totalAmount'),
@@ -21,8 +23,60 @@ const elements = {
 
 const state = {
     activeVisitStart: null,
+    activeVisitCustomerName: '',
+    isTesting: false,
     pendingPayment: null,
 };
+
+function normalizeCustomerName(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function getCustomerName() {
+    return normalizeCustomerName(elements.customerName.value);
+}
+
+function hasCustomerName() {
+    return getCustomerName().length > 0;
+}
+
+function setCustomerName(name) {
+    elements.customerName.value = name ?? '';
+}
+
+function parseStoredDate(value) {
+    if (!value) {
+        return null;
+    }
+
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) {
+        return null;
+    }
+
+    return parsedDate;
+}
+
+function saveActiveVisit() {
+    if (!state.activeVisitStart) {
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        startTime: state.activeVisitStart.toISOString(),
+        customerName: state.activeVisitCustomerName,
+    }));
+}
+
+async function loadAppConfig() {
+    try {
+        const config = await fetchApi('/api/config');
+        state.isTesting = Boolean(config?.isTesting);
+    } catch {
+        state.isTesting = false;
+    }
+}
 
 function wait(ms) {
     return new Promise((resolve) => {
@@ -88,6 +142,7 @@ function showVisitDetails(result) {
     const startTimeStr = result.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const endTimeStr = result.endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    elements.customerNameDisplay.textContent = result.customerName ?? 'Не указано';
     elements.timeRange.innerHTML = `${startTimeStr} – ${endTimeStr}`;
     elements.durationMinutes.innerHTML = result.totalMinutes;
     elements.visitDetails.style.display = 'block';
@@ -112,6 +167,7 @@ function savePendingPayment() {
 
     localStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify({
         id: state.pendingPayment.id ?? null,
+        customerName: state.pendingPayment.customerName,
         cost: state.pendingPayment.cost,
         totalMinutes: state.pendingPayment.totalMinutes,
         startTime: state.pendingPayment.startTime.toISOString(),
@@ -157,16 +213,22 @@ async function getPaymentStatusWithRetry(paymentId, attempts = 6, delayMs = 1500
 
 function clearActiveVisit() {
     state.activeVisitStart = null;
+    state.activeVisitCustomerName = '';
     localStorage.removeItem(STORAGE_KEY);
 }
 
 function updateUIByState() {
     const isActive = state.activeVisitStart !== null;
+    const hasPendingPayment = Boolean(state.pendingPayment);
+    const canUseName = hasCustomerName();
+
+    elements.customerName.disabled = isActive && Boolean(state.activeVisitCustomerName);
 
     if (isActive) {
         elements.statusLed.classList.add('active');
         const startTimeStr = state.activeVisitStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        elements.statusText.innerHTML = `🟢 Визит активен (начало в ${startTimeStr})`;
+        const visitCustomerName = state.activeVisitCustomerName || 'гость без имени';
+        elements.statusText.innerHTML = `🟢 Визит активен: ${visitCustomerName} (начало в ${startTimeStr})`;
         elements.startBtn.disabled = true;
         elements.endBtn.disabled = false;
         elements.payBtn.disabled = true;
@@ -174,10 +236,12 @@ function updateUIByState() {
     }
 
     elements.statusLed.classList.remove('active');
-    elements.statusText.innerHTML = '⚪ Нет активного визита';
-    elements.startBtn.disabled = false;
+    elements.statusText.innerHTML = hasPendingPayment
+        ? '🟡 Есть неоплаченный завершённый визит'
+        : '⚪ Нет активного визита';
+    elements.startBtn.disabled = hasPendingPayment || !canUseName;
     elements.endBtn.disabled = true;
-    elements.payBtn.disabled = !state.pendingPayment;
+    elements.payBtn.disabled = !state.pendingPayment || !canUseName;
 }
 
 function startVisit() {
@@ -186,17 +250,29 @@ function startVisit() {
         return;
     }
 
+    if (state.pendingPayment) {
+        setInfoMessage('Сначала оплатите уже завершённый визит, чтобы не потерять его.');
+        return;
+    }
+
+    const customerName = getCustomerName();
+    if (!customerName) {
+        setInfoMessage('Введите имя гостя перед началом визита.');
+        return;
+    }
+
     const now = new Date();
-    if (!isWithinWorkingHours(now)) {
+    if (!state.isTesting && !isWithinWorkingHours(now)) {
         setInfoMessage('⏰ Кафе сейчас закрыто. Расписание: выходные 10:00–22:00, будни 12:00–22:00.');
         return;
     }
 
     state.activeVisitStart = now;
-    localStorage.setItem(STORAGE_KEY, state.activeVisitStart.toISOString());
+    state.activeVisitCustomerName = customerName;
+    saveActiveVisit();
     resetPaymentState();
     updateUIByState();
-    setInfoMessage('🎉 Визит начат! Не забудьте нажать «Завершить визит» при выходе.');
+    setInfoMessage(`🎉 Визит для гостя ${customerName} начат! Не забудьте нажать «Завершить визит» при выходе.`);
     renderAmount(0);
     hideVisitDetails();
     hidePaymentState();
@@ -209,7 +285,9 @@ function finishVisit() {
         return;
     }
 
-    const result = calculateVisitCost(state.activeVisitStart, new Date());
+    const result = calculateVisitCost(state.activeVisitStart, new Date(), {
+        skipWorkingHoursCheck: state.isTesting,
+    });
     if (result.error) {
         setInfoMessage(`❌ Ошибка: ${result.error}`);
         renderAmount(0);
@@ -217,14 +295,23 @@ function finishVisit() {
         return;
     }
 
+    const customerName = state.activeVisitCustomerName || getCustomerName();
+    if (!customerName) {
+        setInfoMessage('Введите имя гостя перед завершением визита.');
+        return;
+    }
+
     renderAmount(result.cost);
-    state.pendingPayment = result;
+    state.pendingPayment = {
+        ...result,
+        customerName,
+    };
     savePendingPayment();
-    showVisitDetails(result);
+    showVisitDetails(state.pendingPayment);
 
     const weekendFlag = isWeekend(state.activeVisitStart);
     const stopText = weekendFlag ? '1300' : '900';
-    setInfoMessage(`✅ Визит завершён. Сумма к оплате: ${result.cost} ₽ (стоп-чек ${stopText} ₽). Нажмите «Оплатить», чтобы перейти в ЮKassa.`);
+    setInfoMessage(`✅ Визит гостя ${state.pendingPayment.customerName} завершён. Сумма к оплате: ${result.cost} ₽ (стоп-чек ${stopText} ₽). Нажмите «Оплатить», чтобы перейти в ЮKassa.`);
     showPaymentState({
         title: 'Ожидает оплаты',
         text: 'После оплаты в ЮKassa вы автоматически вернётесь на эту страницу.',
@@ -242,6 +329,15 @@ async function redirectToYooKassa() {
         return;
     }
 
+    const customerName = getCustomerName();
+    if (!customerName) {
+        setInfoMessage('Введите имя гостя перед оплатой.');
+        return;
+    }
+
+    state.pendingPayment.customerName = customerName;
+    savePendingPayment();
+
     elements.payBtn.disabled = true;
     setInfoMessage('Сейчас откроется страница оплаты ЮKassa.');
     showPaymentState({
@@ -257,11 +353,15 @@ async function redirectToYooKassa() {
             method: 'POST',
             body: JSON.stringify({
                 amount: state.pendingPayment.cost,
-                description: `Оплата визита в Козюкофе (${state.pendingPayment.totalMinutes} мин)`,
+                description: `Оплата визита в Козюкофе: ${customerName} (${state.pendingPayment.totalMinutes} мин)`,
+                customerName,
                 returnToken,
                 metadata: {
+                    customer_name: customerName,
                     duration_minutes: String(state.pendingPayment.totalMinutes),
                     return_token: returnToken,
+                    visit_start: state.pendingPayment.startTime.toISOString(),
+                    visit_end: state.pendingPayment.endTime.toISOString(),
                 },
             }),
         });
@@ -299,19 +399,36 @@ function restoreVisitFromStorage() {
         return;
     }
 
-    const parsedStart = new Date(stored);
-    if (Number.isNaN(parsedStart.getTime())) {
+    let parsedStart = null;
+    let customerName = '';
+
+    try {
+        const parsed = JSON.parse(stored);
+        parsedStart = parseStoredDate(parsed.startTime);
+        customerName = normalizeCustomerName(parsed.customerName);
+    } catch {
+        parsedStart = parseStoredDate(stored);
+    }
+
+    if (!parsedStart) {
         localStorage.removeItem(STORAGE_KEY);
         return;
     }
 
     const now = new Date();
-    if (parsedStart.toDateString() !== now.toDateString() || !isWithinWorkingHours(parsedStart)) {
+    if (
+        (!state.isTesting && parsedStart.toDateString() !== now.toDateString())
+        || (!state.isTesting && !isWithinWorkingHours(parsedStart))
+    ) {
         localStorage.removeItem(STORAGE_KEY);
         return;
     }
 
     state.activeVisitStart = parsedStart;
+    state.activeVisitCustomerName = customerName;
+    if (customerName) {
+        setCustomerName(customerName);
+    }
     updateUIByState();
     setInfoMessage('⏳ Активный визит восстановлен. Нажмите «Завершить визит», когда покинете кафе.');
     hideVisitDetails();
@@ -327,10 +444,14 @@ function restorePendingPayment() {
         const parsedPayment = JSON.parse(storedPayment);
         state.pendingPayment = {
             ...parsedPayment,
-            startTime: new Date(parsedPayment.startTime),
-            endTime: new Date(parsedPayment.endTime),
+            customerName: normalizeCustomerName(parsedPayment.customerName),
+            startTime: parseStoredDate(parsedPayment.startTime) ?? new Date(),
+            endTime: parseStoredDate(parsedPayment.endTime) ?? new Date(),
         };
 
+        if (state.pendingPayment.customerName) {
+            setCustomerName(state.pendingPayment.customerName);
+        }
         renderAmount(state.pendingPayment.cost);
         showVisitDetails(state.pendingPayment);
         elements.payBtn.style.display = 'inline-flex';
@@ -366,12 +487,19 @@ async function handlePaymentReturn() {
             state.pendingPayment = {
                 ...(state.pendingPayment ?? {}),
                 id: lookupResult.paymentId,
-                cost: state.pendingPayment?.cost ?? 0,
-                totalMinutes: state.pendingPayment?.totalMinutes ?? 0,
-                startTime: state.pendingPayment?.startTime ?? new Date(),
-                endTime: state.pendingPayment?.endTime ?? new Date(),
+                customerName: state.pendingPayment?.customerName ?? normalizeCustomerName(lookupResult.customerName),
+                cost: state.pendingPayment?.cost ?? lookupResult.amount ?? 0,
+                totalMinutes: state.pendingPayment?.totalMinutes ?? Number(lookupResult.metadata?.duration_minutes ?? 0),
+                startTime: state.pendingPayment?.startTime ?? parseStoredDate(lookupResult.metadata?.visit_start) ?? new Date(),
+                endTime: state.pendingPayment?.endTime ?? parseStoredDate(lookupResult.metadata?.visit_end) ?? new Date(),
             };
+            if (state.pendingPayment.customerName) {
+                setCustomerName(state.pendingPayment.customerName);
+            }
             savePendingPayment();
+            renderAmount(state.pendingPayment.cost);
+            showVisitDetails(state.pendingPayment);
+            elements.payBtn.style.display = 'inline-flex';
         }
 
         if (!state.pendingPayment?.id) {
@@ -386,6 +514,7 @@ async function handlePaymentReturn() {
 
         if (payment.status === 'succeeded' || payment.paid) {
             resetPaymentState();
+            setCustomerName('');
             setInfoMessage('Оплата прошла успешно. Спасибо за визит!');
             hideVisitDetails();
             renderAmount(0);
@@ -446,13 +575,32 @@ function setupBeforeUnloadWarning() {
     });
 }
 
+function handleCustomerNameInput() {
+    const customerName = getCustomerName();
+
+    if (state.activeVisitStart && !state.activeVisitCustomerName && customerName) {
+        state.activeVisitCustomerName = customerName;
+        saveActiveVisit();
+    }
+
+    if (state.pendingPayment) {
+        state.pendingPayment.customerName = customerName;
+        savePendingPayment();
+        showVisitDetails(state.pendingPayment);
+    }
+
+    updateUIByState();
+}
+
 function bindEvents() {
     elements.startBtn.addEventListener('click', startVisit);
     elements.endBtn.addEventListener('click', finishVisit);
     elements.payBtn.addEventListener('click', redirectToYooKassa);
+    elements.customerName.addEventListener('input', handleCustomerNameInput);
 }
 
 async function init() {
+    await loadAppConfig();
     restoreVisitFromStorage();
     restorePendingPayment();
     updateUIByState();

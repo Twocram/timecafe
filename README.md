@@ -56,6 +56,8 @@ curl http://localhost:3000/health
 - `YOOKASSA_SHOP_ID` - shop id из YooKassa
 - `YOOKASSA_SECRET_KEY` - secret key из YooKassa
 - `YOOKASSA_RETURN_URL` - абсолютный URL возврата после оплаты
+- `IS_TESTING` - `true` или `false`, отключает проверку рабочего времени на фронтенде для тестовых платежей
+- `GOOGLE_SHEETS_WEBHOOK_URL` - URL опубликованного Google Apps Script Web App для записи успешных оплат в Google Sheets
 
 Если `DATABASE_URL` не используется, приложение также понимает:
 
@@ -72,12 +74,140 @@ curl http://localhost:3000/health
 В ней хранится:
 - `return_token`
 - `payment_id`
+- `customer_name`
 - сумма
 - описание
 - metadata
 - время создания
 
 Это нужно, чтобы возврат после оплаты работал стабильно даже после рестарта контейнера.
+
+Также для синхронизации с Google Sheets сохраняется отметка `google_sheets_synced_at`, чтобы один и тот же успешный платёж не попадал в таблицу повторно.
+
+## Синхронизация с Google Sheets
+
+Прямой ссылки вида `https://docs.google.com/spreadsheets/.../edit` недостаточно для серверной записи из Node.js. Для автоматического добавления строк нужен webhook. Самый простой вариант здесь - Google Apps Script Web App.
+
+### 1. Создайте Apps Script для таблицы
+
+Откройте нужную Google Sheets таблицу и выберите `Extensions -> Apps Script`, затем вставьте код:
+
+```javascript
+const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID';
+const SHEET_NAME = 'Payments';
+
+function getSheet() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.insertSheet(SHEET_NAME);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'payment_id',
+      'return_token',
+      'customer_name',
+      'amount',
+      'currency',
+      'description',
+      'status',
+      'paid',
+      'created_at',
+      'paid_at',
+      'metadata_json'
+    ]);
+  }
+
+  return sheet;
+}
+
+function doPost(e) {
+  const payload = JSON.parse(e.postData.contents || '{}');
+  const sheet = getSheet();
+  const paymentId = String(payload.paymentId || '').trim();
+
+  if (!paymentId) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: 'paymentId is required' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  let existing = null;
+  if (sheet.getLastRow() > 1) {
+    existing = sheet
+      .getRange(2, 1, sheet.getLastRow() - 1, 1)
+      .createTextFinder(paymentId)
+      .matchEntireCell(true)
+      .findNext();
+  }
+
+  if (!existing) {
+    sheet.appendRow([
+      paymentId,
+      payload.returnToken || '',
+      payload.customerName || '',
+      payload.amount || '',
+      payload.currency || 'RUB',
+      payload.description || '',
+      payload.status || '',
+      payload.paid ? 'true' : 'false',
+      payload.createdAt || '',
+      payload.paidAt || '',
+      JSON.stringify(payload.metadata || {})
+    ]);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+В `SPREADSHEET_ID` подставьте id из URL таблицы: часть между `/d/` и `/edit`.
+
+### 2. Опубликуйте Web App
+
+В Apps Script:
+
+- `Deploy -> New deployment`
+- тип: `Web app`
+- `Execute as`: `Me`
+- `Who has access`: `Anyone`
+
+Скопируйте получившийся URL Web App и положите его в `.env`:
+
+```env
+GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/your-web-app-id/exec
+```
+
+### 3. Как это работает в приложении
+
+- пользователь вводит имя на фронтенде до начала визита
+- когда YooKassa присылает событие `payment.succeeded` на `/api/yookassa/webhook`, сервер отправляет платёж в `GOOGLE_SHEETS_WEBHOOK_URL`
+- если webhook от YooKassa ещё не настроен, резервно синхронизация также пытается выполниться при проверке `/api/payments/:paymentId` после возврата пользователя на сайт
+- после успешной отправки в БД ставится `google_sheets_synced_at`
+- если webhook временно недоступен, статус оплаты для клиента всё равно возвращается, а синхронизацию можно повторить позже
+
+### 3.1 Настройка webhook в YooKassa
+
+Чтобы таблица обновлялась сразу после успешной оплаты, а не только после возврата пользователя в браузер, настройте HTTP-уведомление YooKassa на ваш сервер:
+
+- URL: `https://your-domain.example/api/yookassa/webhook`
+- событие: `payment.succeeded`
+
+Для локального `localhost` webhook от YooKassa не подойдёт, потому что ЮKassa должна достучаться до публичного URL. Локально можно тестировать через возврат пользователя на сайт или через туннель вроде `ngrok`.
+
+### 4. Загрузка уже завершённых платежей
+
+Для старых записей, которые ещё не были выгружены:
+
+```bash
+npm run sync:payments
+```
+
+Опционально можно ограничить количество проверяемых записей:
+
+```bash
+npm run sync:payments -- 50
+```
 
 ## Деплой на Railway
 
