@@ -239,7 +239,7 @@ function updateUIByState() {
     elements.statusText.innerHTML = hasPendingPayment
         ? '🟡 Есть неоплаченный завершённый визит'
         : '⚪ Нет активного визита';
-    elements.startBtn.disabled = hasPendingPayment || !canUseName;
+    elements.startBtn.disabled = !canUseName;
     elements.endBtn.disabled = true;
     elements.payBtn.disabled = !state.pendingPayment || !canUseName;
 }
@@ -247,11 +247,6 @@ function updateUIByState() {
 function startVisit() {
     if (state.activeVisitStart) {
         setInfoMessage('Визит уже активен. Завершите текущий, чтобы начать новый.');
-        return;
-    }
-
-    if (state.pendingPayment) {
-        setInfoMessage('Сначала оплатите уже завершённый визит, чтобы не потерять его.');
         return;
     }
 
