@@ -4,8 +4,8 @@
 
 Стек:
 - `Fastify` для API и раздачи статики
-- `PostgreSQL` для хранения платёжных сессий
-- `Docker` и `docker compose` для локального запуска
+- `Supabase PostgreSQL` для хранения платёжных сессий
+- `Docker` и `docker compose` для локального запуска с локальной PostgreSQL при необходимости
 
 ## Локальный запуск через Docker
 
@@ -21,18 +21,21 @@ cp .env.example .env
 - `YOOKASSA_SECRET_KEY`
 - `YOOKASSA_RETURN_URL`
 
-Для локальной разработки можно оставить:
+Для подключения к Supabase на обычной IPv4-сети используйте `Session Pooler`, а не прямой `db.*.supabase.co` host:
 
 ```env
 PORT=3000
-DATABASE_URL=postgresql://vika:vika_password@db:5432/vika
-DATABASE_SSL=false
+DATABASE_URL=postgresql://postgres.rilfpjxgiublaugwbzxo:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+DATABASE_SSL=true
 YOOKASSA_RETURN_URL=http://localhost:3000/?payment=return
 ```
 
+Замените `[YOUR-PASSWORD]` и `[REGION]` значениями из Supabase: `Database` -> `Connection string` -> `Session Pooler`.
+Если пароль содержит специальные символы (`@`, `#`, `/`, `?`, `%`), закодируйте его для URL перед вставкой в `DATABASE_URL`.
+
 Важно:
 - хост `db` в `DATABASE_URL` работает только внутри `docker compose`
-- для Render, Railway и других managed-хостингов нужен внешний URL вашей PostgreSQL, а не `@db:5432`
+- для Render, Railway и других хостингов используйте Supabase `Session Pooler`, а не `@db:5432` и не прямой `db.*.supabase.co` host
 
 3. Поднимите проект:
 
@@ -51,8 +54,8 @@ curl http://localhost:3000/health
 ## Переменные окружения
 
 - `PORT` - порт HTTP-сервера внутри контейнера
-- `DATABASE_URL` - строка подключения к PostgreSQL
-- `DATABASE_SSL` - `true` или `false`, включает SSL для подключения к БД
+- `DATABASE_URL` - строка подключения к PostgreSQL; для Supabase: `postgresql://postgres:<password>@db.rilfpjxgiublaugwbzxo.supabase.co:5432/postgres`
+- `DATABASE_SSL` - `true` или `false`, включает SSL для подключения к БД; для Supabase должно быть `true`
 - `YOOKASSA_SHOP_ID` - shop id из YooKassa
 - `YOOKASSA_SECRET_KEY` - secret key из YooKassa
 - `YOOKASSA_RETURN_URL` - абсолютный URL возврата после оплаты
@@ -213,24 +216,19 @@ npm run sync:payments -- 50
 
 Рекомендуемая схема:
 - один сервис приложения из этого репозитория
-- один managed `PostgreSQL` в том же проекте Railway
+- внешний `Supabase PostgreSQL` как база данных
 
 ### 1. Создайте сервис приложения
 
 - Подключите GitHub-репозиторий в Railway
 - Railway увидит [Dockerfile](/Users/artyom/Documents/projects/vika/Dockerfile:1) и соберёт контейнер из него
 
-### 2. Добавьте PostgreSQL
-
-- В проекте Railway добавьте `PostgreSQL`
-- Railway автоматически создаст `DATABASE_URL`
-
-### 3. Настройте переменные приложения
+### 2. Настройте переменные приложения
 
 Минимально нужны:
 
 ```env
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL=postgresql://postgres.rilfpjxgiublaugwbzxo:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
 YOOKASSA_SHOP_ID=...
 YOOKASSA_SECRET_KEY=...
@@ -239,11 +237,12 @@ PORT=3000
 ```
 
 Примечания:
-- `DATABASE_SSL=true` обычно нужен для managed Postgres
+- замените `[YOUR-PASSWORD]` и `[REGION]` значениями из Supabase `Session Pooler`
+- `DATABASE_SSL=true` нужен для Supabase
 - `YOOKASSA_RETURN_URL` должен указывать на ваш реальный публичный домен
 - приложение уже слушает `0.0.0.0`, что подходит для Railway
 
-### 4. Проверьте после деплоя
+### 3. Проверьте после деплоя
 
 - откройте `/health`
 - создайте тестовый платёж
@@ -253,7 +252,7 @@ PORT=3000
 
 Рекомендуемая схема:
 - один `Web Service` для приложения из этого репозитория
-- одна managed `PostgreSQL` база в Render
+- внешний `Supabase PostgreSQL` как база данных
 
 Что важно:
 - Render не использует ваш `docker-compose.yml`
@@ -265,15 +264,14 @@ PORT=3000
 
 - в Render откройте `Blueprints` -> `New Blueprint Instance`
 - выберите этот репозиторий
-- Render поднимет `Web Service` и managed `PostgreSQL` по [render.yaml](/Users/artyom/Documents/projects/vika/render.yaml:1)
+- Render поднимет только `Web Service`; база Render больше не создаётся
 
 ### 2. Заполните секреты при первом создании
 
+- `DATABASE_URL=postgresql://postgres.rilfpjxgiublaugwbzxo:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres`
 - `YOOKASSA_SHOP_ID`
 - `YOOKASSA_SECRET_KEY`
 - `YOOKASSA_RETURN_URL`
-
-`DATABASE_URL` будет выставлен автоматически из managed Postgres.
 
 ### 3. Что именно задаёт Blueprint
 
@@ -281,17 +279,17 @@ PORT=3000
 
 ```env
 PORT=10000
-DATABASE_URL=<берётся из Render Postgres>
-DATABASE_SSL=false
+DATABASE_URL=<запрашивается в Render>
+DATABASE_SSL=true
 YOOKASSA_SHOP_ID=<запрашивается в Render>
 YOOKASSA_SECRET_KEY=<запрашивается в Render>
 YOOKASSA_RETURN_URL=<запрашивается в Render>
 ```
 
 Примечания:
-- не используйте `@db:5432` в `DATABASE_URL`
-- `DATABASE_SSL=false` выставлен специально, потому что Blueprint использует внутренний `connectionString` Render по private network
-- если потом захотите подключаться к внешнему URL базы вручную, проверьте, нужен ли для него `DATABASE_SSL=true`
+- замените `[YOUR-PASSWORD]` и `[REGION]` значениями из Supabase `Session Pooler`
+- не используйте `@db:5432` и прямой `db.*.supabase.co` host в `DATABASE_URL`
+- `DATABASE_SSL=true` нужен для Supabase
 
 ### 4. Проверьте после деплоя
 

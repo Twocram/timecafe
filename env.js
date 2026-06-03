@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+
+function shouldKeepExistingEnvironmentValue(key) {
+    return process.env.NODE_ENV === 'production' && key in process.env;
+}
 function applyDotEnv() {
     const envPath = path.join(__dirname, '.env');
     if (!existsSync(envPath)) {
@@ -27,7 +31,7 @@ function applyDotEnv() {
         const key = line.slice(0, separatorIndex).trim();
         const value = line.slice(separatorIndex + 1).trim();
 
-        if (!(key in process.env)) {
+        if (!shouldKeepExistingEnvironmentValue(key)) {
             process.env[key] = value;
         }
     }

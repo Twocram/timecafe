@@ -4,10 +4,25 @@ function normalizeBoolean(value) {
     return ['1', 'true', 'yes', 'on', 'require'].includes(String(value).toLowerCase());
 }
 
-function getSslConfig() {
-    const { DATABASE_SSL = 'false' } = process.env;
+function getSslConfig(databaseUrl) {
+    const { DATABASE_SSL } = process.env;
 
-    if (!normalizeBoolean(DATABASE_SSL)) {
+    if (DATABASE_SSL !== undefined) {
+        if (!normalizeBoolean(DATABASE_SSL)) {
+            return undefined;
+        }
+
+        return {
+            rejectUnauthorized: false,
+        };
+    }
+
+    if (!databaseUrl) {
+        return undefined;
+    }
+
+    const hostname = getDatabaseHostname(databaseUrl);
+    if (!hostname?.endsWith('.supabase.co')) {
         return undefined;
     }
 
@@ -21,6 +36,40 @@ function getDatabaseHostname(databaseUrl) {
         return new URL(databaseUrl).hostname;
     } catch {
         return null;
+    }
+}
+
+function isDirectSupabaseHostname(hostname) {
+    return hostname?.startsWith('db.') && hostname.endsWith('.supabase.co');
+}
+
+function createSupabaseIpv4Error(hostname) {
+    return new Error(
+        `Supabase direct database host "${hostname}" is IPv6-only. This machine/network cannot resolve it through Node.js. In Supabase, open Database -> Connection string -> Session Pooler and use that pooler URL in DATABASE_URL instead of the direct db.*.supabase.co URL.`,
+    );
+}
+
+function normalizeConnectionError(error) {
+    if (error?.code !== 'ENOTFOUND') {
+        return error;
+    }
+
+    const databaseUrl = process.env.DATABASE_URL;
+    const hostname = databaseUrl ? getDatabaseHostname(databaseUrl) : null;
+    if (!isDirectSupabaseHostname(hostname)) {
+        return error;
+    }
+
+    const normalizedError = createSupabaseIpv4Error(hostname);
+    normalizedError.cause = error;
+    return normalizedError;
+}
+
+async function queryDatabase(text, params) {
+    try {
+        return await getPool().query(text, params);
+    } catch (error) {
+        throw normalizeConnectionError(error);
     }
 }
 
@@ -42,7 +91,7 @@ function assertHostedDatabaseConfig({ DATABASE_URL, PGHOST }) {
 
     if (hostname === 'db' || PGHOST === 'db') {
         throw new Error(
-            'Хост БД "db" работает только внутри docker compose. Для Render укажите реальный managed PostgreSQL URL в DATABASE_URL или задайте PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE.',
+            'Хост БД "db" работает только внутри docker compose. Для Render/Railway укажите внешний PostgreSQL URL, например Supabase, в DATABASE_URL или задайте PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE.',
         );
     }
 }
@@ -56,7 +105,7 @@ function createPool() {
         PGPASSWORD,
         PGDATABASE,
     } = process.env;
-    const ssl = getSslConfig();
+    const ssl = getSslConfig(DATABASE_URL);
 
     assertHostedDatabaseConfig({ DATABASE_URL, PGHOST });
 
@@ -88,7 +137,7 @@ function getPool() {
 }
 
 async function initializeDatabase() {
-    await getPool().query(`
+    await queryDatabase(`
         CREATE TABLE IF NOT EXISTS payment_sessions (
             return_token TEXT PRIMARY KEY,
             payment_id TEXT NOT NULL UNIQUE,
@@ -101,17 +150,17 @@ async function initializeDatabase() {
         )
     `);
 
-    await getPool().query(`
+    await queryDatabase(`
         ALTER TABLE payment_sessions
         ADD COLUMN IF NOT EXISTS google_sheets_synced_at TIMESTAMPTZ
     `);
 
-    await getPool().query(`
+    await queryDatabase(`
         ALTER TABLE payment_sessions
         ADD COLUMN IF NOT EXISTS customer_name TEXT
     `);
 
-    await getPool().query(`
+    await queryDatabase(`
         UPDATE payment_sessions
         SET customer_name = metadata->>'customer_name'
         WHERE customer_name IS NULL
@@ -210,7 +259,7 @@ async function markPaymentSessionSynced(paymentId) {
 }
 
 async function checkDatabaseHealth() {
-    await getPool().query('SELECT 1');
+    await queryDatabase('SELECT 1');
 }
 
 async function closeDatabase() {
