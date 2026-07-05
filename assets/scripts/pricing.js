@@ -49,10 +49,6 @@ function calculateVisitCost(startDate, endDate, options = {}) {
         return { cost: 0, error: 'Начало визита вне рабочего времени кафе' };
     }
 
-    if (!skipWorkingHoursCheck && !isWithinWorkingHours(endDate)) {
-        return { cost: 0, error: 'Завершение визита возможно только в рабочие часы (до 22:00)' };
-    }
-
     if (!skipWorkingHoursCheck && startDate.toDateString() !== endDate.toDateString()) {
         return { cost: 0, error: 'Визит не может длиться дольше рабочего дня. Завершите визит до 22:00' };
     }

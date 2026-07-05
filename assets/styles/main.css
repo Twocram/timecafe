@@ -5,7 +5,7 @@
 }
 
 body {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     background: #f5f7fe;
     color: #1a1a2c;
     line-height: 1.5;
@@ -188,7 +188,10 @@ body {
     font-size: 1rem;
     color: #0f172a;
     background: #fffdfb;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
 }
 
 .text-input::placeholder {
@@ -412,7 +415,9 @@ body {
     box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
     opacity: 0;
     transform: translateY(-12px);
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
 }
 
 .toast.is-visible {
