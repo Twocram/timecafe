@@ -6,12 +6,16 @@ function getYooKassaConfig() {
         YOOKASSA_SHOP_ID,
         YOOKASSA_SECRET_KEY,
         YOOKASSA_RETURN_URL = `http://localhost:${PORT}/?payment=return`,
+        YOOKASSA_RECEIPT_EMAIL,
+        YOOKASSA_VAT_CODE = '1',
     } = process.env;
 
     return {
         YOOKASSA_SHOP_ID,
         YOOKASSA_SECRET_KEY,
         YOOKASSA_RETURN_URL,
+        YOOKASSA_RECEIPT_EMAIL,
+        YOOKASSA_VAT_CODE,
     };
 }
 
@@ -45,7 +49,33 @@ function buildReturnUrl(returnToken) {
     return returnUrl.toString();
 }
 
-async function createYooKassaPayment({ amount, description, metadata, returnToken }) {
+function buildReceipt({ amount, description, customerEmail }) {
+    const { YOOKASSA_RECEIPT_EMAIL, YOOKASSA_VAT_CODE } = getYooKassaConfig();
+    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail ?? '')
+        ? customerEmail
+        : YOOKASSA_RECEIPT_EMAIL;
+
+    if (!email) {
+        throw new Error('Для чека нужен email гостя или YOOKASSA_RECEIPT_EMAIL в .env');
+    }
+
+    return {
+        customer: { email },
+        items: [{
+            description: String(description).slice(0, 128),
+            quantity: '1.00',
+            amount: {
+                value: Number(amount).toFixed(2),
+                currency: 'RUB',
+            },
+            vat_code: Number(YOOKASSA_VAT_CODE),
+            payment_mode: 'full_payment',
+            payment_subject: 'service',
+        }],
+    };
+}
+
+async function createYooKassaPayment({ amount, description, metadata, returnToken, customerEmail }) {
     assertYooKassaConfig();
 
     const response = await fetch('https://api.yookassa.ru/v3/payments', {
@@ -67,6 +97,7 @@ async function createYooKassaPayment({ amount, description, metadata, returnToke
             },
             description,
             metadata,
+            receipt: buildReceipt({ amount, description, customerEmail }),
         }),
     });
 

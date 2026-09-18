@@ -62,6 +62,17 @@
                     placeholder="Например, Артём"
                 >
                 <div class="field-hint">Имя попадёт в платёж и в Google Sheets таблицу.</div>
+                <label class="field-label" for="customerEmail">Email для чека</label>
+                <input
+                    class="text-input"
+                    id="customerEmail"
+                    name="customerEmail"
+                    type="email"
+                    maxlength="254"
+                    autocomplete="email"
+                    placeholder="guest@example.com"
+                >
+                <div class="field-hint">На этот email ЮKassa отправит чек. Можно оставить пустым.</div>
             </div>
 
             <div class="btn-group">

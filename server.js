@@ -76,6 +76,7 @@ app.post('/api/payments', {
                 amount: { type: 'number', minimum: 1 },
                 description: { type: 'string', minLength: 1 },
                 customerName: { type: 'string', minLength: 1, maxLength: 80 },
+                customerEmail: { type: 'string', maxLength: 254 },
                 returnToken: { type: 'string', minLength: 1 },
                 metadata: {
                     type: 'object',

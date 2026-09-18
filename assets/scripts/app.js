@@ -6,6 +6,7 @@ const elements = {
     endBtn: document.getElementById('endBtn'),
     payBtn: document.getElementById('payBtn'),
     customerName: document.getElementById('customerName'),
+    customerEmail: document.getElementById('customerEmail'),
     customerNameDisplay: document.getElementById('customerNameDisplay'),
     statusLed: document.getElementById('statusLed'),
     statusText: document.getElementById('statusText'),
@@ -34,6 +35,10 @@ function normalizeCustomerName(value) {
 
 function getCustomerName() {
     return normalizeCustomerName(elements.customerName.value);
+}
+
+function getCustomerEmail() {
+    return String(elements.customerEmail.value ?? '').trim();
 }
 
 function hasCustomerName() {
@@ -350,6 +355,7 @@ async function redirectToYooKassa() {
                 amount: state.pendingPayment.cost,
                 description: `Оплата визита в Козюкофе: ${customerName} (${state.pendingPayment.totalMinutes} мин)`,
                 customerName,
+                customerEmail: getCustomerEmail() || undefined,
                 returnToken,
                 metadata: {
                     customer_name: customerName,
